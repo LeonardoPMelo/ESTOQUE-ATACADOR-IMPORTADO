@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexStock | Sistema Stickfran</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Roboto:wght@500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
+
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .btn-delete {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 6px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: 0.2s;
+        }
+        .btn-delete:hover {
+            background: #dc2626;
+        }
+    </style>
+</head>
+<body>
+
+    <nav class="sidebar">
+        <div class="logo">
+            <div class="logo-icon"><i class="fa-solid fa-layer-group"></i></div>
+            <div class="logo-text">
+                <h2>STICKFRAN</h2>
+                <span>Controle de Estoque</span>
+            </div>
+        </div>
+        
+        <ul class="menu">
+            <li onclick="mostrarTela('dashboard', this)" class="active">
+                <i class="fa-solid fa-chart-pie"></i> <span>Visão Geral</span>
+            </li>
+            <li onclick="mostrarTela('movimentacao', this)">
+                <i class="fa-solid fa-right-left"></i> <span>Movimentações</span>
+            </li>
+            <li onclick="mostrarTela('produtos', this)">
+                <i class="fa-solid fa-boxes-stacked"></i> <span>Catálogo STK</span>
+            </li>
+        </ul>
+
+        <div class="user-profile">
+            <div class="avatar">A</div>
+            <div class="user-info">
+                <p>Admin STK</p>
+                <span>Logado</span>
+            </div>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        
+        <header class="top-bar">
+            <h2 id="page-title">Dashboard Operacional</h2>
+            <div class="top-actions">
+                <span class="date-badge"><i class="fa-regular fa-calendar"></i> <span id="data-atual"></span></span>
+            </div>
+        </header>
+
+        <section id="dashboard" class="screen fade-in">
+            <div class="filter-bar">
+                <div class="select-wrapper">
+                    <i class="fa-regular fa-calendar"></i>
+                    <select id="filtro-mes" onchange="atualizarDashboard()">
+                        </select>
+                </div>
+                
+                <div class="select-wrapper">
+                    <i class="fa-regular fa-calendar-check"></i>
+                    <select id="filtro-ano" onchange="atualizarDashboard()">
+                        </select>
+                </div>
+
+                <div class="select-wrapper grow">
+                    <i class="fa-solid fa-filter"></i>
+                    <select id="filtro-produto-dash" onchange="atualizarDashboard()">
+                        <option value="todos">Todos os Produtos</option>
+                    </select>
+                </div>
+                <button onclick="atualizarDashboard()" class="btn-refresh" title="Atualizar"><i class="fa-solid fa-rotate-right"></i></button>
+            </div>
+
+            <div class="dashboard-grid">
+                <div class="card kpi-card">
+                    <span class="kpi-label">Entradas (Período)</span>
+                    <div class="kpi-value text-success" id="kpi-entradas">0</div>
+                    <div class="kpi-footer"><i class="fa-solid fa-arrow-up"></i> Volume recebido</div>
+                </div>
+                <div class="card kpi-card">
+                    <span class="kpi-label">Saídas (Período)</span>
+                    <div class="kpi-value text-danger" id="kpi-saidas">0</div>
+                    <div class="kpi-footer"><i class="fa-solid fa-arrow-down"></i> Volume expedido</div>
+                </div>
+                <div class="card kpi-card">
+                    <span class="kpi-label">Saldo Total</span>
+                    <div class="kpi-value text-primary" id="kpi-saldo-total">0</div>
+                    <div class="kpi-footer"><i class="fa-solid fa-box"></i> Unidades em estoque</div>
+                </div>
+                <div class="card kpi-card kpi-alert">
+                    <span class="kpi-label">Nível de Alerta</span>
+                    <div class="kpi-value" id="kpi-criticos-dash">0</div>
+                    <div class="kpi-footer" id="msg-alerta">Carregando...</div>
+                </div>
+
+                <div class="card main-chart-section">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-chart-column"></i> Fluxo de Movimentação</h3>
+                    </div>
+                    <div class="chart-box">
+                        <canvas id="graficoPrincipal"></canvas>
+                    </div>
+                </div>
+
+                <div class="card side-panel-section">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-trophy"></i> Top 5 Itens</h3>
+                    </div>
+                    <ul id="lista-top-produtos" class="ranking-list">
+                        </ul>
+                </div>
+
+                <div class="card recent-activity-section">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-clock-rotate-left"></i> Últimas Operações</h3>
+                    </div>
+                    <div class="table-responsive small-scroll">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Produto</th>
+                                    <th>Tipo</th>
+                                    <th>Qtd</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tabela-dash-recente"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card secondary-chart-section">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-chart-pie"></i> Status do Estoque</h3>
+                    </div>
+                    <div class="chart-box p-10">
+                        <canvas id="graficoPizza"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="movimentacao" class="screen hidden fade-in">
+            <div class="split-layout">
+                
+                <div class="card form-card">
+                    <div class="card-header">
+                        <h3><i class="fa-solid fa-pen-to-square"></i> Registrar Movimento</h3>
+                    </div>
+                    
+                    <form id="form-movimentacao">
+                        <div class="form-group">
+                            <label>Data do Lançamento</label>
+                            <input type="date" id="mov-data" required class="full-width">
+                            <small style="color: #64748b; font-size: 0.75rem;">Altere para lançamentos passados.</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Tipo de Operação</label>
+                            <div class="radio-group">
+                                <input type="radio" name="tipo" value="ENTRADA" id="opt-entrada" checked onchange="atualizarEstiloForm()">
+                                <label for="opt-entrada" class="radio-label entry">
+                                    <i class="fa-solid fa-arrow-down"></i> Entrada
+                                </label>
+                                
+                                <input type="radio" name="tipo" value="SAIDA" id="opt-saida" onchange="atualizarEstiloForm()">
+                                <label for="opt-saida" class="radio-label exit">
+                                    <i class="fa-solid fa-arrow-up"></i> Saída
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Produto</label>
+                            <select id="mov-produto" required class="full-width" onchange="atualizarPreviewSaldo()">
+                                <option value="">Selecione...</option>
+                            </select>
+                            <div id="saldo-preview" class="saldo-badge hidden">
+                                Saldo Atual: <strong>---</strong>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Quantidade</label>
+                            <input type="number" id="mov-qtd" min="1" placeholder="0" required class="full-width">
+                        </div>
+
+                        <div class="form-footer">
+                            <button type="submit" id="btn-confirmar-mov" class="btn-block btn-success">
+                                Confirmar Entrada
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="card table-card full-height">
+                    <div class="card-header flex-between">
+                        <h3>Histórico</h3>
+                        <div class="header-actions">
+                            <div class="search-box-mini">
+                                <i class="fa-solid fa-magnifying-glass"></i>
+                                <input type="text" id="busca-historico" placeholder="Filtrar..." onkeyup="filtrarHistorico()">
+                            </div>
+                            <div class="export-btns">
+                                <button onclick="exportarExcel()" class="btn-mini excel" title="Baixar Excel"><i class="fa-solid fa-file-excel"></i></button>
+                                <button onclick="exportarPDF()" class="btn-mini pdf" title="Baixar PDF"><i class="fa-solid fa-file-pdf"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Produto</th>
+                                    <th>Tipo</th>
+                                    <th>Qtd</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tabela-historico"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="produtos" class="screen hidden fade-in">
+            <div class="card mb-20">
+                <div class="card-header">
+                    <h3>Cadastro de Produto</h3>
+                </div>
+                <form id="form-produto" class="inline-form">
+                    <input type="text" id="prod-codigo" placeholder="Código (SKU)" required style="flex:1">
+                    <input type="text" id="prod-desc" placeholder="Descrição Detalhada" required style="flex:3">
+                    <input type="text" id="prod-un" placeholder="UN" style="width:80px">
+                    <input type="number" id="prod-min" placeholder="Mín." style="width:100px">
+                    <input type="text" id="prod-local" placeholder="Local" style="flex:1">
+                    <button type="submit" class="btn-primary">Salvar</button>
+                </form>
+            </div>
+
+            <div class="card table-card">
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Código</th>
+                                <th>Descrição</th>
+                                <th>Local</th>
+                                <th>Saldo</th>
+                                <th>Status</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabela-produtos"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Scripts Modularizados -->
+    <script src="notifications.js"></script>
+    <script src="utils.js"></script>
+    <script src="supabase-client.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
