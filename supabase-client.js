@@ -1,30 +1,33 @@
 /**
- * Cliente Supabase - Centralizado e com tratamento de erros
- * 
- * AVISO DE SEGURANÇA:
- * As credenciais do Supabase estão expostas neste arquivo.
- * Embora a chave seja "publishable", recomenda-se implementar um backend
- * para intermediar as chamadas ao banco de dados em um ambiente de produção.
- * Certifique-se de que o RLS (Row Level Security) está rigorosamente configurado
- * no Supabase para evitar acesso não autorizado.
+ * Cliente Supabase - Centralizado e Corrigido
  */
 
+// Configurações do Projeto
 const SUPABASE_URL = 'https://ytjbgxpmalajyjesjeow.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_AVkKp7zfV-vdYAgd-T0BPw_wuuyhpMJ';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl0amJneHBtYWxhanlqZXNqZW93Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUyNzk3ODUsImV4cCI6MjA4MDg1NTc4NX0.uyhFyPDd5DBsy902-Qp9JR5iuWMDQRQznUBluxaYygU';
+
+// Verificação de segurança no console para garantir que a lib carregou
+if (!window.supabase) {
+    console.error('ERRO CRÍTICO: A biblioteca do Supabase não foi carregada! Verifique se o script do CDN está no <head> do index.html.');
+}
 
 // Inicializar cliente Supabase
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// Usamos uma variável local 'client' para evitar conflitos globais
+const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 /**
- * Wrapper para operações do Supabase com tratamento de erros centralizado
+ * Wrapper para operações do Supabase
+ * Usamos 'window.SupabaseService' para garantir que o script.js consiga enxergar 
+ * este serviço globalmente, corrigindo o erro "is not defined".
  */
-const SupabaseService = {
+window.SupabaseService = {
+    
     /**
      * Buscar produtos com filtros opcionais
      */
     async getProdutos(filters = {}) {
         try {
-            let query = supabase.from('produtos').select('*');
+            let query = client.from('produtos').select('*');
 
             if (filters.codigo) {
                 query = query.ilike('codigo', `%${filters.codigo}%`);
@@ -35,7 +38,7 @@ const SupabaseService = {
             if (error) throw error;
             return { data, error: null };
         } catch (error) {
-            ErrorHandler.handle(error, 'getProdutos');
+            tratarErro(error, 'getProdutos');
             return { data: null, error };
         }
     },
@@ -45,7 +48,7 @@ const SupabaseService = {
      */
     async getProdutoById(id) {
         try {
-            const { data, error } = await supabase
+            const { data, error } = await client
                 .from('produtos')
                 .select('saldo_atual, unidade')
                 .eq('id', id)
@@ -54,7 +57,7 @@ const SupabaseService = {
             if (error) throw error;
             return { data, error: null };
         } catch (error) {
-            ErrorHandler.handle(error, 'getProdutoById');
+            tratarErro(error, 'getProdutoById');
             return { data: null, error };
         }
     },
@@ -64,12 +67,11 @@ const SupabaseService = {
      */
     async createProduto(produto) {
         try {
-            // Validação básica
             if (!produto.codigo || !produto.descricao) {
                 throw new Error('Código e Descrição são obrigatórios');
             }
 
-            const { data, error } = await supabase
+            const { data, error } = await client
                 .from('produtos')
                 .insert([produto])
                 .select();
@@ -77,7 +79,7 @@ const SupabaseService = {
             if (error) throw error;
             return { data, error: null };
         } catch (error) {
-            ErrorHandler.handle(error, 'createProduto');
+            tratarErro(error, 'createProduto');
             return { data: null, error };
         }
     },
@@ -87,33 +89,34 @@ const SupabaseService = {
      */
     async deleteProduto(id) {
         try {
-            const { error } = await supabase
+            // Primeiro remove movimentações associadas (Integridade Referencial)
+            const { error: movError } = await client
                 .from('movimentacoes')
                 .delete()
                 .eq('produto_id', id);
             
-            if (error) throw error;
+            if (movError) throw movError;
 
-            const { error: prodError } = await supabase
+            // Depois remove o produto
+            const { error } = await client
                 .from('produtos')
                 .delete()
                 .eq('id', id);
 
-            if (prodError) throw prodError;
+            if (error) throw error;
             return { error: null };
         } catch (error) {
-            ErrorHandler.handle(error, 'deleteProduto');
+            tratarErro(error, 'deleteProduto');
             return { error };
         }
     },
 
     /**
      * Buscar movimentações com filtros avançados
-     * Implementa a correção de performance: filtra por data no servidor.
      */
     async getMovimentacoes(filters = {}) {
         try {
-            let query = supabase
+            let query = client
                 .from('movimentacoes')
                 .select('*, produtos(descricao, codigo, saldo_atual, minimo)');
 
@@ -122,7 +125,7 @@ const SupabaseService = {
                 query = query.eq('produto_id', filters.produto_id);
             }
 
-            // Filtro por intervalo de datas (Correção de Performance)
+            // Filtro por intervalo de datas
             if (filters.startDate && filters.endDate) {
                 query = query
                     .gte('data_movimentacao', filters.startDate)
@@ -132,32 +135,24 @@ const SupabaseService = {
             // Ordenação
             const { data, error } = await query.order('data_movimentacao', {
                 ascending: false
-            }).limit(filters.limit || 200); // Aumenta o limite para histórico
+            }).limit(filters.limit || 200);
 
             if (error) throw error;
             return { data, error: null };
         } catch (error) {
-            ErrorHandler.handle(error, 'getMovimentacoes');
+            tratarErro(error, 'getMovimentacoes');
             return { data: null, error };
         }
     },
 
     /**
-     * Criar nova movimentação (entrada ou saída)
+     * Criar nova movimentação
      */
     async createMovimentacao(movimentacao) {
         try {
-            // Validações
+            // Validações básicas
             if (!movimentacao.produto_id || !movimentacao.quantidade || !movimentacao.tipo) {
-                throw new Error('Produto, Quantidade e Tipo são obrigatórios');
-            }
-
-            if (!['ENTRADA', 'SAIDA'].includes(movimentacao.tipo)) {
-                throw new Error('Tipo deve ser ENTRADA ou SAIDA');
-            }
-
-            if (movimentacao.quantidade <= 0) {
-                throw new Error('Quantidade deve ser maior que zero');
+                throw new Error('Dados incompletos');
             }
 
             // Validação de saldo para saídas
@@ -170,8 +165,7 @@ const SupabaseService = {
                 }
             }
 
-            // Inserir movimentação
-            const { data, error } = await supabase
+            const { data, error } = await client
                 .from('movimentacoes')
                 .insert([movimentacao])
                 .select();
@@ -179,8 +173,20 @@ const SupabaseService = {
             if (error) throw error;
             return { data, error: null };
         } catch (error) {
-            ErrorHandler.handle(error, 'createMovimentacao');
+            tratarErro(error, 'createMovimentacao');
             return { data: null, error };
         }
     }
 };
+
+/**
+ * Função auxiliar interna para evitar falha se o ErrorHandler não existir
+ */
+function tratarErro(error, contexto) {
+    if (window.ErrorHandler) {
+        window.ErrorHandler.handle(error, contexto);
+    } else {
+        console.error(`[${contexto}]`, error);
+        alert(`Erro: ${error.message || error}`);
+    }
+}
